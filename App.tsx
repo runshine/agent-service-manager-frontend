@@ -59,20 +59,20 @@ const App: React.FC = () => {
     // Parameterized routes
     if (currentPath.startsWith('/agents/')) {
       const agentKey = currentPath.split('/')[2];
-      return <AgentDetail agentKey={agentKey} onBack={() => navigate('/agents')} />;
+      return <AgentDetail agentKey={agentKey} onBack={() => navigate('/agents')} onNavigate={navigate} />;
     }
 
     if (currentPath.startsWith('/templates/')) {
       const templateName = currentPath.split('/')[2];
-      return <TemplateDetail templateName={decodeURIComponent(templateName)} onBack={() => navigate('/templates')} />;
+      return <TemplateDetail templateName={decodeURIComponent(templateName)} onBack={() => navigate('/templates')} onNavigate={navigate} />;
     }
 
     switch (currentPath) {
-      case '/dashboard': return <Dashboard workspaceId={currentWorkspace} />;
+      case '/dashboard': return <Dashboard workspaceId={currentWorkspace} onNavigate={navigate} />;
       case '/templates': return <Templates />;
       case '/agents': return <Agents workspaceId={currentWorkspace} onSelectAgent={(key) => navigate(`/agents/${key}`)} />;
       case '/tasks': return <Tasks workspaceId={currentWorkspace} />;
-      case '/users': return user?.role === 'admin' ? <Users /> : <Dashboard workspaceId={currentWorkspace} />;
+      case '/users': return user?.role === 'admin' ? <Users /> : <Dashboard workspaceId={currentWorkspace} onNavigate={navigate} />;
       case '/profile': return (
         <div className="p-8 bg-white rounded-xl shadow-sm border border-gray-200">
           <h2 className="text-xl font-bold mb-4">My Profile</h2>
@@ -84,7 +84,7 @@ const App: React.FC = () => {
           </div>
         </div>
       );
-      default: return <Dashboard workspaceId={currentWorkspace} />;
+      default: return <Dashboard workspaceId={currentWorkspace} onNavigate={navigate} />;
     }
   };
 
