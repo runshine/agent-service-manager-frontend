@@ -69,8 +69,25 @@ export const api = {
     },
     get: (key: string) => api.request<any>(`/agents/${key}`),
     reset: (key: string) => api.request<any>(`/agents/${key}/reset`, { method: 'POST' }),
-    // Added refresh method to sync registry for agents as required by the Agents page
     refresh: () => api.request<any>('/agents/refresh', { method: 'POST' }),
+    
+    // Proxy methods to communicate with a specific agent
+    proxy: {
+      getSystemInfo: (key: string) => api.request<any>(`/proxy/${key}/api/system/info`),
+      getSystemMetrics: (key: string) => api.request<any>(`/proxy/${key}/api/system/metrics`),
+      getProcesses: (key: string) => api.request<any>(`/proxy/${key}/api/system/processes`),
+      getDockerStats: (key: string) => api.request<any>(`/proxy/${key}/api/system/docker/stats`),
+      getServices: (key: string) => api.request<any>(`/proxy/${key}/api/services`),
+      getServiceDetail: (key: string, name: string) => api.request<any>(`/proxy/${key}/api/services/${name}`),
+      startService: (key: string, name: string) => api.request<any>(`/proxy/${key}/api/services/${name}/start`, { method: 'POST' }),
+      stopService: (key: string, name: string) => api.request<any>(`/proxy/${key}/api/services/${name}/stop`, { method: 'POST' }),
+      restartService: (key: string, name: string) => api.request<any>(`/proxy/${key}/api/services/${name}/restart`, { method: 'POST' }),
+      getLogs: (key: string, name: string, tail = 100) => api.request<any>(`/proxy/${key}/api/services/${name}/logs?tail=${tail}`),
+      execute: (key: string, name: string, data: any) => api.request<any>(`/proxy/${key}/api/services/${name}/exec`, {
+        method: 'POST',
+        body: JSON.stringify(data)
+      }),
+    }
   },
 
   tasks: {
