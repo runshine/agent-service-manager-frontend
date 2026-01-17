@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './pages/Dashboard';
 import Templates from './pages/Templates';
+import TemplateDetail from './pages/TemplateDetail';
 import Agents from './pages/Agents';
 import AgentDetail from './pages/AgentDetail';
 import Tasks from './pages/Tasks';
@@ -55,10 +56,15 @@ const App: React.FC = () => {
   }
 
   const renderContent = () => {
-    // Handle parameterized agent details path like /agents/some-key
+    // Parameterized routes
     if (currentPath.startsWith('/agents/')) {
       const agentKey = currentPath.split('/')[2];
       return <AgentDetail agentKey={agentKey} onBack={() => navigate('/agents')} />;
+    }
+
+    if (currentPath.startsWith('/templates/')) {
+      const templateName = currentPath.split('/')[2];
+      return <TemplateDetail templateName={decodeURIComponent(templateName)} onBack={() => navigate('/templates')} />;
     }
 
     switch (currentPath) {
@@ -67,15 +73,17 @@ const App: React.FC = () => {
       case '/agents': return <Agents workspaceId={currentWorkspace} onSelectAgent={(key) => navigate(`/agents/${key}`)} />;
       case '/tasks': return <Tasks workspaceId={currentWorkspace} />;
       case '/users': return user?.role === 'admin' ? <Users /> : <Dashboard workspaceId={currentWorkspace} />;
-      case '/profile': return <div className="p-8 bg-white rounded-xl shadow-sm border border-gray-200">
-        <h2 className="text-xl font-bold mb-4">My Profile</h2>
-        <div className="space-y-4">
-          <p><strong>Username:</strong> {user?.username}</p>
-          <p><strong>Full Name:</strong> {user?.full_name}</p>
-          <p><strong>Role:</strong> {user?.role}</p>
-          <p><strong>Email:</strong> {user?.email}</p>
+      case '/profile': return (
+        <div className="p-8 bg-white rounded-xl shadow-sm border border-gray-200">
+          <h2 className="text-xl font-bold mb-4">My Profile</h2>
+          <div className="space-y-4">
+            <p><strong>Username:</strong> {user?.username}</p>
+            <p><strong>Full Name:</strong> {user?.full_name}</p>
+            <p><strong>Role:</strong> {user?.role}</p>
+            <p><strong>Email:</strong> {user?.email}</p>
+          </div>
         </div>
-      </div>;
+      );
       default: return <Dashboard workspaceId={currentWorkspace} />;
     }
   };
@@ -83,7 +91,7 @@ const App: React.FC = () => {
   return (
     <div className="flex bg-slate-50 min-h-screen">
       <Sidebar 
-        currentPath={currentPath.startsWith('/agents/') ? '/agents' : currentPath} 
+        currentPath={currentPath.startsWith('/agents/') ? '/agents' : currentPath.startsWith('/templates/') ? '/templates' : currentPath} 
         userRole={user?.role || 'user'} 
         onNavigate={navigate}
         onLogout={handleLogout}

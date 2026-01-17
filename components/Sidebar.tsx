@@ -36,7 +36,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPath, userRole, onNavigate, on
     <div className="w-64 h-screen bg-slate-900 text-white flex flex-col fixed left-0 top-0 z-50">
       <div className="p-6 flex items-center gap-3 border-b border-slate-800">
         <Container className="text-blue-400 w-8 h-8" />
-        <span className="text-xl font-bold tracking-tight">Hub Console</span>
+        <span className="text-xl font-bold tracking-tight">Service HUB</span>
       </div>
       
       <nav className="flex-1 px-4 py-6 space-y-2">

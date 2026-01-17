@@ -12,13 +12,20 @@ const getAuthHeaders = () => {
 export const api = {
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${API_BASE}${endpoint}`;
+    
+    // Only set Content-Type if there is a body and it's not FormData
+    const contentTypeHeader = options.body 
+      ? (options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' })
+      : {};
+
     const headers = {
       ...getAuthHeaders(),
-      ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      ...contentTypeHeader,
       ...options.headers,
     };
 
     try {
+      console.debug(`[API] ${options.method || 'GET'} ${endpoint}`);
       const response = await fetch(url, { ...options, headers });
       
       if (response.status === 401) {
@@ -28,13 +35,64 @@ export const api = {
         throw new Error('Unauthorized');
       }
 
-      const data = await response.json();
+      // Handle 204 No Content or empty bodies gracefully
+      let data: any = {};
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const text = await response.text();
+        data = text ? JSON.parse(text) : {};
+      }
+
       if (!response.ok) {
-        throw new Error(data.error || 'Request failed');
+        const errorMsg = data.error || data.message || `Request failed with status ${response.status}`;
+        console.error(`[API Error] ${endpoint}:`, errorMsg);
+        throw new Error(errorMsg);
       }
       return data;
     } catch (error) {
-      console.error(`API Error [${endpoint}]:`, error);
+      console.error(`[API Network Error] ${endpoint}:`, error);
+      throw error;
+    }
+  },
+
+  async download(endpoint: string, filename?: string) {
+    const url = `${API_BASE}${endpoint}`;
+    const headers = { ...getAuthHeaders() };
+    
+    try {
+      const response = await fetch(url, { headers });
+      
+      if (!response.ok) {
+        const text = await response.text();
+        let errorMsg = 'Download failed';
+        try {
+          const json = JSON.parse(text);
+          errorMsg = json.error || json.message || errorMsg;
+        } catch(e) {}
+        throw new Error(errorMsg);
+      }
+      
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      
+      if (!filename) {
+        const disposition = response.headers.get('Content-Disposition');
+        if (disposition && disposition.includes('filename=')) {
+          filename = disposition.split('filename=')[1].replace(/"/g, '');
+        } else {
+          filename = 'template.zip';
+        }
+      }
+      
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(blobUrl);
+      a.remove();
+    } catch (error) {
+      console.error(`[API Download Error] ${endpoint}:`, error);
       throw error;
     }
   },
@@ -53,12 +111,18 @@ export const api = {
 
   templates: {
     list: (page = 1, perPage = 10) => api.request<any>(`/templates?page=${page}&per_page=${perPage}`),
+    get: (name: string) => api.request<any>(`/templates/${encodeURIComponent(name)}`),
+    getYaml: (name: string) => api.request<any>(`/templates/${encodeURIComponent(name)}/yaml`),
+    updateYaml: (name: string, content: string) => api.request<any>(`/templates/${encodeURIComponent(name)}/yaml`, {
+      method: 'PUT',
+      body: JSON.stringify({ yaml_content: content })
+    }),
     upload: (formData: FormData) => api.request<any>('/templates', {
       method: 'POST',
       body: formData
     }),
-    delete: (name: string) => api.request<any>(`/templates/${name}`, { method: 'DELETE' }),
-    download: (name: string) => `${API_BASE}/templates/${name}/download?token=${localStorage.getItem('token')}`,
+    delete: (name: string) => api.request<any>(`/templates/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+    download: (name: string) => api.download(`/templates/${encodeURIComponent(name)}/download`),
   },
 
   agents: {
@@ -71,7 +135,6 @@ export const api = {
     reset: (key: string) => api.request<any>(`/agents/${key}/reset`, { method: 'POST' }),
     refresh: () => api.request<any>('/agents/refresh', { method: 'POST' }),
     
-    // Proxy methods to communicate with a specific agent
     proxy: {
       getSystemInfo: (key: string) => api.request<any>(`/proxy/${key}/api/system/info`),
       getSystemMetrics: (key: string) => api.request<any>(`/proxy/${key}/api/system/metrics`),

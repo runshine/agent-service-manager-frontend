@@ -1,5 +1,5 @@
 {
-  "name": "Docker Service Hub",
+  "name": "Service HUB",
   "description": "A centralized management console for Docker Compose services running on distributed agents, featuring template management, agent discovery via Nacos, and asynchronous task tracking.",
   "requestFramePermissions": []
 }

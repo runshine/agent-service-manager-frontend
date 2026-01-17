@@ -35,7 +35,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600 mb-4">
               <Container className="text-white w-10 h-10" />
             </div>
-            <h1 className="text-3xl font-extrabold text-white tracking-tight">Docker Hub</h1>
+            <h1 className="text-3xl font-extrabold text-white tracking-tight">Service HUB</h1>
             <p className="text-slate-400">Control Plane Authentication</p>
           </div>
 

@@ -24,7 +24,9 @@ import {
   Clock,
   Box,
   Network,
-  Info
+  Info,
+  Tag,
+  X
 } from 'lucide-react';
 
 interface AgentDetailProps {
@@ -116,9 +118,17 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack }) => {
               </span>
             </div>
             <div className="flex items-center gap-2 mt-1 text-sm font-bold text-gray-400">
-              <Globe size={14} /> {agent.ip_address}
+              <div className="flex items-center gap-1.5">
+                <Globe size={14} /> {agent.ip_address}
+              </div>
               <span className="text-gray-200 mx-1">|</span>
-              <Box size={14} /> Workspace: {agent.workspace_id}
+              <div className="flex items-center gap-1.5">
+                <Box size={14} /> Workspace: {agent.workspace_id}
+              </div>
+              <span className="text-gray-200 mx-1">|</span>
+              <div className="flex items-center gap-1.5 text-blue-500/70">
+                <Tag size={14} /> Version: <span className="font-mono">{formatted.nacos_agent_version || 'N/A'}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -665,24 +675,8 @@ const LoadIndicator = ({ label, value }: { label: string, value: number }) => (
 const InfoRow = ({ label, value }: { label: string, value: string }) => (
   <div className="flex justify-between items-center py-2 border-b border-gray-50 last:border-0">
     <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{label}</span>
-    <span className="text-xs font-bold text-gray-700 truncate max-w-[150px]">{value || '--'}</span>
+    <span className="text-xs font-bold text-gray-700 truncate max-w-[180px]">{value || '--'}</span>
   </div>
-);
-
-const X = ({ size, className }: any) => (
-  <svg 
-    className={className} 
-    width={size} 
-    height={size} 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    stroke="currentColor" 
-    strokeWidth="2" 
-    strokeLinecap="round" 
-    strokeLinejoin="round"
-  >
-    <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
-  </svg>
 );
 
 export default AgentDetail;
