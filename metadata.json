@@ -1,5 +1,5 @@
 {
-  "name": "Service HUB",
+  "name": "agent-service-manager-frontend",
   "description": "A centralized management console for Docker Compose services running on distributed agents, featuring template management, agent discovery via Nacos, and asynchronous task tracking.",
   "requestFramePermissions": []
 }

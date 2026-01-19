@@ -145,7 +145,7 @@ export const api = {
       startService: (key: string, name: string) => api.request<any>(`/proxy/${key}/api/services/${name}/start`, { method: 'POST' }),
       stopService: (key: string, name: string) => api.request<any>(`/proxy/${key}/api/services/${name}/stop`, { method: 'POST' }),
       restartService: (key: string, name: string) => api.request<any>(`/proxy/${key}/api/services/${name}/restart`, { method: 'POST' }),
-      getLogs: (key: string, name: string, tail = 100) => api.request<any>(`/proxy/${key}/api/services/${name}/logs?tail=${tail}`),
+      getLogs: (key: string, name: string, tail = 1000) => api.request<any>(`/proxy/${key}/api/services/${name}/logs?tail=${tail}`),
       execute: (key: string, name: string, data: any) => api.request<any>(`/proxy/${key}/api/services/${name}/exec`, {
         method: 'POST',
         body: JSON.stringify(data)
@@ -154,11 +154,12 @@ export const api = {
   },
 
   tasks: {
-    list: (page = 1, perPage = 10, type?: string, status?: string, workspaceId?: string) => {
+    list: (page = 1, perPage = 10, type?: string, status?: string, workspaceId?: string, agentKey?: string) => {
       let url = `/tasks?page=${page}&per_page=${perPage}`;
       if (type) url += `&type=${type}`;
       if (status) url += `&status=${status}`;
       if (workspaceId) url += `&workspace_id=${encodeURIComponent(workspaceId)}`;
+      if (agentKey) url += `&agent_key=${encodeURIComponent(agentKey)}`;
       return api.request<any>(url);
     },
     deploy: (data: any) => api.request<any>('/tasks/deploy', {
@@ -170,6 +171,7 @@ export const api = {
       body: JSON.stringify(data)
     }),
     get: (id: string) => api.request<any>(`/tasks/${id}`),
+    getLogs: (id: string, page = 1, perPage = 100) => api.request<any>(`/tasks/${id}/logs?page=${page}&per_page=${perPage}`),
     delete: (id: string) => api.request<any>(`/tasks/${id}`, { method: 'DELETE' }),
   },
 

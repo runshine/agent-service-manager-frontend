@@ -56,7 +56,6 @@ const App: React.FC = () => {
   }
 
   const renderContent = () => {
-    // Parameterized routes
     if (currentPath.startsWith('/agents/')) {
       const agentKey = currentPath.split('/')[2];
       return <AgentDetail agentKey={agentKey} onBack={() => navigate('/agents')} onNavigate={navigate} />;
@@ -74,13 +73,27 @@ const App: React.FC = () => {
       case '/tasks': return <Tasks workspaceId={currentWorkspace} />;
       case '/users': return user?.role === 'admin' ? <Users /> : <Dashboard workspaceId={currentWorkspace} onNavigate={navigate} />;
       case '/profile': return (
-        <div className="p-8 bg-white rounded-xl shadow-sm border border-gray-200">
-          <h2 className="text-xl font-bold mb-4">My Profile</h2>
-          <div className="space-y-4">
-            <p><strong>Username:</strong> {user?.username}</p>
-            <p><strong>Full Name:</strong> {user?.full_name}</p>
-            <p><strong>Role:</strong> {user?.role}</p>
-            <p><strong>Email:</strong> {user?.email}</p>
+        <div className="p-10 bg-white rounded-3xl shadow-sm border border-gray-200">
+          <h2 className="text-2xl font-black mb-8">My Profile</h2>
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="p-6 bg-gray-50 rounded-2xl">
+                <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Username</p>
+                <p className="text-lg font-bold text-gray-900">{user?.username}</p>
+              </div>
+              <div className="p-6 bg-gray-50 rounded-2xl">
+                <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Role</p>
+                <p className="text-lg font-bold text-blue-600 uppercase">{user?.role}</p>
+              </div>
+              <div className="p-6 bg-gray-50 rounded-2xl">
+                <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Full Name</p>
+                <p className="text-lg font-bold text-gray-900">{user?.full_name}</p>
+              </div>
+              <div className="p-6 bg-gray-50 rounded-2xl">
+                <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Email</p>
+                <p className="text-lg font-bold text-gray-900">{user?.email}</p>
+              </div>
+            </div>
           </div>
         </div>
       );
@@ -102,8 +115,9 @@ const App: React.FC = () => {
           onWorkspaceChange={handleWorkspaceChange} 
           userName={user?.full_name || user?.username || 'User'}
         />
-        <main className="p-8 transition-all duration-300">
-          <div className="max-w-7xl mx-auto">
+        <main className="p-6 md:p-10 flex-1 flex flex-col">
+          {/* Removed max-w-7xl and mx-auto to allow full screen width */}
+          <div className="w-full flex-1">
             {renderContent()}
           </div>
         </main>

@@ -25,7 +25,7 @@ export interface ServiceTemplate {
   id: number;
   name: string;
   description: string;
-  type: 'yaml' | 'zip';
+  type: 'yaml' | 'archive' | 'zip';
   file_path: string;
   created_by: string;
   created_at: string;

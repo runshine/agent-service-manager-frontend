@@ -21,7 +21,9 @@ import {
   Square,
   AlertTriangle,
   Info,
-  Search
+  Search,
+  Code,
+  AlertCircle
 } from 'lucide-react';
 
 type SortField = 'name' | 'type' | 'updated_at';
@@ -36,31 +38,30 @@ const Templates: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Deletion Confirmation Modal State
   const [deleteConfirm, setDeleteConfirm] = useState<{
     show: boolean;
     type: 'single' | 'batch';
     targetTemplate?: ServiceTemplate;
   }>({ show: false, type: 'single' });
 
-  // Selection state
   const [selectedNames, setSelectedNames] = useState<Set<string>>(new Set());
   
-  // Pagination state
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(1000);
+  const [perPage, setPerPage] = useState(100);
   const [total, setTotal] = useState(0);
 
-  // Sorting state
   const [sortConfig, setSortConfig] = useState<{ field: SortField, order: SortOrder }>({
     field: 'updated_at',
     order: 'desc'
   });
 
-  const [formData, setFormData] = useState({ name: '', description: '', type: 'yaml' as 'yaml' | 'zip' });
+  // Create Form State - changed 'zip' to 'archive'
+  const [formData, setFormData] = useState({ name: '', description: '', type: 'yaml' as 'yaml' | 'archive' });
   const [file, setFile] = useState<File | null>(null);
   const [yamlContent, setYamlContent] = useState('');
   const [importMode, setImportMode] = useState<'file' | 'editor'>('file');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const fetchTemplates = async () => {
     try {
@@ -68,7 +69,7 @@ const Templates: React.FC = () => {
       const res = await api.templates.list(page, perPage);
       setTemplates(res.templates || []);
       setTotal(res.total || 0);
-      setSelectedNames(new Set()); // Clear selection on refresh
+      setSelectedNames(new Set());
     } catch (err: any) {
       console.error("Fetch failed:", err);
     } finally {
@@ -80,24 +81,17 @@ const Templates: React.FC = () => {
     fetchTemplates();
   }, [page, perPage]);
 
-  // Frontend Search and Sorting Logic
   const filteredAndSortedTemplates = useMemo(() => {
     let items = [...templates];
-    
-    // Filter by name
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       items = items.filter(t => t.name.toLowerCase().includes(query));
     }
-
-    // Sort items
     items.sort((a, b) => {
       let valA = (a as any)[sortConfig.field] || '';
       let valB = (b as any)[sortConfig.field] || '';
-
       if (typeof valA === 'string') valA = valA.toLowerCase();
       if (typeof valB === 'string') valB = valB.toLowerCase();
-
       if (valA < valB) return sortConfig.order === 'asc' ? -1 : 1;
       if (valA > valB) return sortConfig.order === 'asc' ? 1 : -1;
       return 0;
@@ -110,32 +104,6 @@ const Templates: React.FC = () => {
       field,
       order: prev.field === field && prev.order === 'asc' ? 'desc' : 'asc'
     }));
-  };
-
-  const handleSelectRow = (e: React.MouseEvent, name: string) => {
-    e.stopPropagation();
-    const next = new Set(selectedNames);
-    if (next.has(name)) next.delete(name);
-    else next.add(name);
-    setSelectedNames(next);
-  };
-
-  const handleSelectAll = () => {
-    if (selectedNames.size === filteredAndSortedTemplates.length) {
-      setSelectedNames(new Set());
-    } else {
-      setSelectedNames(new Set(filteredAndSortedTemplates.map(t => t.name)));
-    }
-  };
-
-  const triggerSingleDelete = (e: React.MouseEvent, tpl: ServiceTemplate) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDeleteConfirm({ show: true, type: 'single', targetTemplate: tpl });
-  };
-
-  const triggerBatchDelete = () => {
-    setDeleteConfirm({ show: true, type: 'batch' });
   };
 
   const executeDelete = async () => {
@@ -156,7 +124,6 @@ const Templates: React.FC = () => {
       setBatchDeleting(true);
       setDeleteConfirm({ ...deleteConfirm, show: false });
       try {
-        // Explicitly type 'name' as string to fix 'unknown' assignability error
         await Promise.all(names.map((name: string) => api.templates.delete(name)));
         await fetchTemplates();
       } catch (err: any) {
@@ -182,17 +149,27 @@ const Templates: React.FC = () => {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitError(null);
+    if (!formData.name) return setSubmitError('Name is required');
+
+    setIsSubmitting(true);
     const form = new FormData();
     form.append('name', formData.name);
     form.append('description', formData.description);
     form.append('type', formData.type);
 
     if (formData.type === 'yaml' && importMode === 'editor') {
-      if (!yamlContent.trim()) return alert('Please enter YAML content');
+      if (!yamlContent) {
+        setIsSubmitting(false);
+        return setSubmitError('Please enter YAML content');
+      }
       const blob = new Blob([yamlContent], { type: 'text/yaml' });
       form.append('file', blob, 'service.yaml');
     } else {
-      if (!file) return alert('Please select a file');
+      if (!file) {
+        setIsSubmitting(false);
+        return setSubmitError('Please select a file to upload');
+      }
       form.append('file', file);
     }
 
@@ -202,7 +179,10 @@ const Templates: React.FC = () => {
       resetForm();
       fetchTemplates();
     } catch (err: any) {
-      alert(err.message);
+      // The error handling is based on the API response structure { "error": "..." }
+      setSubmitError(err.message || 'An unexpected error occurred during upload');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -211,173 +191,131 @@ const Templates: React.FC = () => {
     setFile(null);
     setYamlContent('');
     setImportMode('file');
+    setSubmitError(null);
   };
-
-  const navigateToDetails = (name: string) => {
-    window.location.hash = `#/templates/${encodeURIComponent(name)}`;
-  };
-
-  const totalPages = Math.ceil(total / perPage);
-
-  // Batch Overview Computation
-  const selectedTemplatesData = useMemo(() => {
-    return templates.filter(t => selectedNames.has(t.name));
-  }, [templates, selectedNames]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+    <div className="space-y-8 animate-in fade-in duration-500 h-full flex flex-col">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <FileText className="text-blue-600" size={28} />
-            Service Templates
+          <h1 className="text-3xl font-black text-gray-900 flex items-center gap-3">
+            <FileText className="text-blue-600" size={32} />
+            Blueprint Library
           </h1>
-          <p className="text-gray-500 font-medium">Repository of Docker Compose blueprints for one-click deployment.</p>
+          <p className="text-gray-500 text-base font-bold mt-1">Repository of distributed Docker Compose specifications.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="relative group">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-500 transition-colors" size={18} />
             <input 
               type="text"
               placeholder="Search blueprints..."
-              className="pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none w-64 shadow-sm"
+              className="pl-12 pr-6 py-3 bg-white border border-gray-200 rounded-2xl text-sm font-bold focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 focus:outline-none w-72 shadow-sm transition-all"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
           {selectedNames.size > 0 && (
             <button
-              onClick={triggerBatchDelete}
-              disabled={batchDeleting}
-              className="bg-red-50 text-red-600 border border-red-100 px-4 py-2 rounded-lg flex items-center gap-2 transition-all hover:bg-red-100 font-bold text-sm shadow-sm active:scale-95"
+              onClick={() => setDeleteConfirm({ show: true, type: 'batch' })}
+              className="bg-red-50 text-red-600 border border-red-100 px-6 py-3 rounded-2xl flex items-center gap-3 transition-all hover:bg-red-100 font-black text-xs uppercase tracking-widest shadow-sm"
             >
-              {batchDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-              <span>Delete Selected ({selectedNames.size})</span>
+              <Trash2 size={18} />
+              <span>Delete Selection ({selectedNames.size})</span>
             </button>
           )}
           <button
-            onClick={fetchTemplates}
-            disabled={loading}
-            className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 border border-gray-200 rounded-lg transition-all disabled:opacity-50 shadow-sm"
+            onClick={() => { resetForm(); setIsModalOpen(true); }}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-2xl flex items-center gap-3 transition-all shadow-xl shadow-blue-600/30 font-black text-xs uppercase tracking-widest active:scale-95"
           >
-            <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
-          </button>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-blue-600/20 font-semibold active:scale-[0.98]"
-          >
-            <Plus size={18} />
-            <span>New Blueprint</span>
+            <Plus size={20} />
+            <span>Create New</span>
           </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-gray-50 border-b border-gray-200">
+      <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-200 overflow-hidden flex flex-col flex-1">
+        <div className="overflow-x-auto custom-scrollbar">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-gray-50/80 border-b border-gray-200 backdrop-blur-sm sticky top-0 z-10">
               <tr>
-                <th className="px-6 py-4 w-10">
-                  <button 
-                    onClick={handleSelectAll}
-                    className="text-gray-400 hover:text-blue-600 transition-colors"
-                  >
-                    {selectedNames.size === filteredAndSortedTemplates.length && filteredAndSortedTemplates.length > 0 
-                      ? <CheckSquare size={18} className="text-blue-600" /> 
-                      : <Square size={18} />
-                    }
+                <th className="px-10 py-5 w-16">
+                  <button onClick={() => {
+                    if (selectedNames.size === filteredAndSortedTemplates.length) setSelectedNames(new Set());
+                    else setSelectedNames(new Set(filteredAndSortedTemplates.map(t => t.name)));
+                  }} className="text-gray-400 hover:text-blue-600">
+                    {selectedNames.size === filteredAndSortedTemplates.length && filteredAndSortedTemplates.length > 0 ? <CheckSquare size={22} className="text-blue-600" /> : <Square size={22} />}
                   </button>
                 </th>
-                <th 
-                  className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
-                  onClick={() => toggleSort('name')}
-                >
-                  <div className="flex items-center gap-1">
-                    Blueprint
-                    <ArrowUpDown size={12} className={sortConfig.field === 'name' ? 'text-blue-600' : 'text-gray-300'} />
-                  </div>
+                <th className="px-10 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] cursor-pointer" onClick={() => toggleSort('name')}>
+                  <div className="flex items-center gap-2">Blueprint Specification <ArrowUpDown size={14} /></div>
                 </th>
-                <th 
-                  className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
-                  onClick={() => toggleSort('type')}
-                >
-                   <div className="flex items-center gap-1">
-                    Type
-                    <ArrowUpDown size={12} className={sortConfig.field === 'type' ? 'text-blue-600' : 'text-gray-300'} />
-                  </div>
+                <th className="px-10 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] cursor-pointer" onClick={() => toggleSort('type')}>
+                  <div className="flex items-center gap-2">Encoding <ArrowUpDown size={14} /></div>
                 </th>
-                <th 
-                  className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
-                  onClick={() => toggleSort('updated_at')}
-                >
-                   <div className="flex items-center gap-1">
-                    Modified
-                    <ArrowUpDown size={12} className={sortConfig.field === 'updated_at' ? 'text-blue-600' : 'text-gray-300'} />
-                  </div>
+                <th className="px-10 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] cursor-pointer" onClick={() => toggleSort('updated_at')}>
+                  <div className="flex items-center gap-2">Last Modified <ArrowUpDown size={14} /></div>
                 </th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+                <th className="px-10 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] text-right">Operations</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-gray-100">
               {loading && templates.length === 0 ? (
-                <tr><td colSpan={5} className="px-6 py-20 text-center"><Loader2 className="animate-spin inline text-blue-600" size={32} /></td></tr>
+                <tr><td colSpan={5} className="px-10 py-40 text-center"><Loader2 className="animate-spin inline text-blue-600" size={48} /></td></tr>
               ) : filteredAndSortedTemplates.length === 0 ? (
-                <tr><td colSpan={5} className="px-6 py-20 text-center text-gray-400 italic">No blueprints found.</td></tr>
+                <tr><td colSpan={5} className="px-10 py-40 text-center text-gray-400 font-bold uppercase tracking-widest italic opacity-40">Blueprint catalog is empty</td></tr>
               ) : filteredAndSortedTemplates.map((tpl) => {
                 const isSelected = selectedNames.has(tpl.name);
                 return (
                   <tr 
                     key={tpl.id} 
-                    onClick={() => navigateToDetails(tpl.name)}
-                    className={`hover:bg-blue-50/30 transition-colors cursor-pointer group ${isSelected ? 'bg-blue-50' : ''}`}
+                    onClick={() => window.location.hash = `#/templates/${encodeURIComponent(tpl.name)}`}
+                    className={`hover:bg-blue-50/40 transition-all cursor-pointer group ${isSelected ? 'bg-blue-50' : ''}`}
                   >
-                    <td className="px-6 py-4" onClick={(e) => handleSelectRow(e, tpl.name)}>
-                      {isSelected 
-                        ? <CheckSquare size={18} className="text-blue-600" /> 
-                        : <Square size={18} className="text-gray-300 group-hover:text-gray-400" />
-                      }
+                    <td className="px-10 py-8" onClick={(e) => {
+                      e.stopPropagation();
+                      const next = new Set(selectedNames);
+                      if (next.has(tpl.name)) next.delete(tpl.name);
+                      else next.add(tpl.name);
+                      setSelectedNames(next);
+                    }}>
+                      {isSelected ? <CheckSquare size={22} className="text-blue-600" /> : <Square size={22} className="text-gray-200 group-hover:text-gray-300" />}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-10 py-8">
                       <div className="flex flex-col">
-                        <span className="font-bold text-gray-900 flex items-center gap-2">
-                          {tpl.name}
-                          <ChevronRight size={14} className="text-gray-300 group-hover:translate-x-1 transition-transform" />
+                        <span className="font-black text-gray-900 text-base flex items-center gap-3">
+                          {tpl.name} <ChevronRight size={18} className="text-gray-200 group-hover:text-blue-500 transition-all" />
                         </span>
-                        <span className="text-xs text-gray-400 truncate max-w-xs font-medium">{tpl.description || 'No description'}</span>
+                        <span className="text-sm text-gray-500 font-medium truncate max-w-xl mt-1">{tpl.description || 'No detailed blueprint specification provided.'}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-10 py-8">
                       {tpl.type === 'yaml' ? (
-                        <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-black uppercase rounded border border-indigo-100 flex items-center gap-1 w-fit">
-                          <FileText size={10} /> YAML
+                        <span className="px-4 py-1.5 bg-indigo-50 text-indigo-700 text-[10px] font-black uppercase rounded-xl border border-indigo-100 flex items-center gap-2 w-fit">
+                          <FileText size={14} /> YAML Specification
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 bg-amber-50 text-amber-700 text-[10px] font-black uppercase rounded border border-amber-100 flex items-center gap-1 w-fit">
-                          <FileArchive size={10} /> ZIP
+                        <span className="px-4 py-1.5 bg-amber-50 text-amber-700 text-[10px] font-black uppercase rounded-xl border border-amber-100 flex items-center gap-2 w-fit">
+                          <FileArchive size={14} /> Archive Bundle
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col text-[10px] text-gray-500">
-                        <span className="font-bold uppercase tracking-widest">{tpl.created_by}</span>
-                        <span>{new Date(tpl.updated_at).toLocaleString()}</span>
+                    <td className="px-10 py-8">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-sm font-bold text-gray-800">{new Date(tpl.updated_at).toLocaleString()}</span>
+                        <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Modified by {tpl.created_by}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end items-center gap-1">
-                        <button
-                          onClick={(e) => handleDownload(e, tpl.name)}
-                          disabled={downloading === tpl.name}
-                          className="p-2 text-gray-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all flex items-center justify-center disabled:opacity-50"
-                        >
-                          {downloading === tpl.name ? <Loader2 size={16} className="animate-spin text-blue-500" /> : <Download size={16} />}
+                    <td className="px-10 py-8 text-right">
+                      <div className="flex justify-end items-center gap-3">
+                        <button onClick={(e) => handleDownload(e, tpl.name)} className="p-3 text-gray-400 hover:text-blue-600 hover:bg-white rounded-2xl transition-all shadow-sm">
+                          {downloading === tpl.name ? <Loader2 size={24} className="animate-spin" /> : <Download size={24} />}
                         </button>
-                        <button
-                          onClick={(e) => triggerSingleDelete(e, tpl)}
-                          disabled={deleting === tpl.name}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-white rounded-lg transition-all disabled:opacity-50 flex items-center justify-center"
-                        >
-                          {deleting === tpl.name ? <Loader2 size={16} className="animate-spin text-red-500" /> : <Trash2 size={16} />}
+                        <button onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteConfirm({ show: true, type: 'single', targetTemplate: tpl });
+                        }} className="p-3 text-gray-400 hover:text-red-600 hover:bg-white rounded-2xl transition-all shadow-sm">
+                          <Trash2 size={24} />
                         </button>
                       </div>
                     </td>
@@ -387,261 +325,172 @@ const Templates: React.FC = () => {
             </tbody>
           </table>
         </div>
-        
-        {/* Pagination Footer */}
-        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-4">
-            <div className="text-xs font-bold text-gray-500 uppercase tracking-widest">
-              Showing {filteredAndSortedTemplates.length} of {total} templates
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400 font-bold uppercase">Per Page:</span>
-              <select 
-                value={perPage} 
-                onChange={(e) => {
-                  setPerPage(Number(e.target.value));
-                  setPage(1);
-                }}
-                className="text-xs font-bold bg-white border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-                <option value={1000}>1000</option>
-                <option value={5000}>5000</option>
-              </select>
-            </div>
-          </div>
-          
-          {totalPages > 1 && (
-            <div className="flex items-center gap-1">
-              <button 
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="p-2 text-gray-400 hover:text-blue-600 disabled:opacity-30 transition-all active:scale-90"
-              >
-                <ChevronLeft size={20} />
-              </button>
-              <div className="flex items-center gap-1 px-4">
-                 <span className="text-xs font-black text-gray-900">{page}</span>
-                 <span className="text-[10px] font-bold text-gray-400 uppercase">of {totalPages}</span>
-              </div>
-              <button 
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="p-2 text-gray-400 hover:text-blue-600 disabled:opacity-30 transition-all active:scale-90"
-              >
-                <ChevronRightIcon size={20} />
-              </button>
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* Deletion Confirmation Modal */}
-      {deleteConfirm.show && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200 border border-red-100">
-            <div className="p-8 border-b border-gray-50 bg-red-50/50 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-red-100 flex items-center justify-center text-red-600">
-                <AlertTriangle size={28} />
-              </div>
-              <div>
-                <h2 className="text-xl font-black text-gray-900 tracking-tight uppercase">Confirm Deletion</h2>
-                <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest">This action cannot be undone</p>
-              </div>
-            </div>
-            
-            <div className="p-8 space-y-6">
-              {deleteConfirm.type === 'single' && deleteConfirm.targetTemplate ? (
-                <div className="space-y-4">
-                  <p className="text-sm text-gray-600 leading-relaxed font-medium">
-                    You are about to permanently delete the following service blueprint:
-                  </p>
-                  <div className="p-5 bg-gray-50 rounded-2xl border border-gray-100 space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Name</span>
-                      <span className="text-sm font-black text-gray-900">{deleteConfirm.targetTemplate.name}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Type</span>
-                      <span className="px-2 py-0.5 bg-white border border-gray-200 rounded text-[10px] font-bold uppercase text-gray-600">
-                        {deleteConfirm.targetTemplate.type}
-                      </span>
-                    </div>
-                    <div className="pt-2 border-t border-gray-200/50">
-                       <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Description</span>
-                       <p className="text-xs text-gray-500 italic leading-relaxed">
-                         {deleteConfirm.targetTemplate.description || 'No description provided.'}
-                       </p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <p className="text-sm text-gray-600 leading-relaxed font-medium">
-                    You are about to delete <span className="font-black text-red-600">{selectedNames.size}</span> templates. Here is an overview of the selection:
-                  </p>
-                  <div className="p-5 bg-gray-50 rounded-2xl border border-gray-100 max-h-[200px] overflow-y-auto custom-scrollbar space-y-2">
-                    {selectedTemplatesData.map(tpl => (
-                      <div key={tpl.name} className="flex items-center justify-between py-1 border-b border-gray-200/50 last:border-0">
-                        <span className="text-xs font-bold text-gray-800">{tpl.name}</span>
-                        <span className="text-[9px] font-black uppercase text-gray-400">{tpl.type}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-xl border border-blue-100 text-blue-700">
-                    <Info size={16} />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Total templates affected: {selectedNames.size}</span>
-                  </div>
-                </div>
-              )}
+      {/* --- MODALS --- */}
 
-              <div className="flex gap-4 pt-4">
-                <button
-                  onClick={() => setDeleteConfirm({ show: false, type: 'single' })}
-                  className="flex-1 px-6 py-4 border-2 border-gray-100 text-gray-500 rounded-2xl hover:bg-gray-50 font-black text-xs uppercase tracking-widest transition-all"
-                >
-                  Go Back
+      {/* Creation Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-md transition-opacity" onClick={() => setIsModalOpen(false)} />
+          <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-3xl overflow-hidden animate-in fade-in zoom-in slide-in-from-bottom-8 duration-300 border border-white/20 relative z-[160]">
+             <div className="p-10 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                <div>
+                   <h2 className="text-3xl font-black text-gray-900 tracking-tight">Create Blueprint</h2>
+                   <p className="text-xs font-black text-blue-600 uppercase tracking-widest mt-2">New Service Definition</p>
+                </div>
+                <button onClick={() => setIsModalOpen(false)} className="p-3 hover:bg-gray-200 rounded-full transition-colors text-gray-400">
+                   <X size={24} />
                 </button>
-                <button
-                  onClick={executeDelete}
-                  className="flex-1 px-6 py-4 bg-red-600 text-white rounded-2xl hover:bg-red-700 font-black text-xs uppercase tracking-widest shadow-xl shadow-red-600/20 active:scale-[0.98] transition-all"
-                >
-                  Permanently Delete
-                </button>
-              </div>
-            </div>
+             </div>
+
+             <form onSubmit={handleUpload} className="p-10 space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                {submitError && (
+                  <div className="p-6 bg-red-50 border border-red-100 rounded-[1.5rem] flex items-start gap-4 text-red-700 animate-in slide-in-from-top-2 duration-200">
+                    <AlertCircle className="shrink-0 mt-0.5" size={20} />
+                    <div className="space-y-1">
+                      <p className="text-xs font-black uppercase tracking-widest">Submission Error</p>
+                      <p className="text-sm font-bold leading-relaxed">{submitError}</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                   <div className="space-y-2">
+                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Specification Name</label>
+                      <input 
+                        required
+                        type="text" 
+                        placeholder="e.g., redis-cluster"
+                        className="w-full px-6 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 focus:outline-none transition-all font-bold text-gray-900"
+                        value={formData.name}
+                        onChange={e => { setFormData({...formData, name: e.target.value}); setSubmitError(null); }}
+                      />
+                   </div>
+                   <div className="space-y-2">
+                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Blueprint Format</label>
+                      <select 
+                        className="w-full px-6 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 focus:outline-none transition-all font-black text-gray-900 uppercase text-xs"
+                        value={formData.type}
+                        onChange={e => { setFormData({...formData, type: e.target.value as any}); setSubmitError(null); }}
+                      >
+                         <option value="yaml">Docker Compose YAML</option>
+                         <option value="archive">Compressed Archive (ZIP, TAR, TGZ, etc.)</option>
+                      </select>
+                   </div>
+                </div>
+
+                <div className="space-y-2">
+                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Brief Description</label>
+                   <textarea 
+                     placeholder="Technical summary of this service stack..."
+                     className="w-full px-6 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 focus:outline-none transition-all font-medium text-gray-700 min-h-[100px]"
+                     value={formData.description}
+                     onChange={e => { setFormData({...formData, description: e.target.value}); setSubmitError(null); }}
+                   />
+                </div>
+
+                {formData.type === 'yaml' && (
+                  <div className="flex gap-1 p-1 bg-gray-100 rounded-2xl border border-gray-200 w-fit">
+                    <button 
+                      type="button"
+                      onClick={() => setImportMode('file')}
+                      className={`flex items-center gap-2 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${importMode === 'file' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}
+                    >
+                      <Upload size={14} /> Local File
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setImportMode('editor')}
+                      className={`flex items-center gap-2 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${importMode === 'editor' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}
+                    >
+                      <Code size={14} /> Inline Editor
+                    </button>
+                  </div>
+                )}
+
+                <div className="p-8 bg-gray-50 border-2 border-dashed border-gray-200 rounded-[2rem]">
+                   {formData.type === 'yaml' && importMode === 'editor' ? (
+                     <textarea 
+                        required
+                        placeholder="Paste your docker-compose.yaml here..."
+                        className="w-full h-64 bg-slate-950 text-slate-300 font-mono text-sm p-6 rounded-2xl border border-white/10 focus:ring-4 focus:ring-blue-500/10 focus:outline-none transition-all"
+                        value={yamlContent}
+                        onChange={e => { setYamlContent(e.target.value); setSubmitError(null); }}
+                     />
+                   ) : (
+                     <div className="flex flex-col items-center justify-center gap-4 py-8">
+                        <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 border border-blue-100">
+                           <Upload size={28} />
+                        </div>
+                        <input 
+                          type="file" 
+                          className="hidden" 
+                          id="file-upload" 
+                          accept={formData.type === 'yaml' ? '.yaml,.yml' : '.zip,.tar,.tar.gz,.tgz,.tar.bz2,.tbz,.tbz2,.tar.xz,.txz'}
+                          onChange={e => { setFile(e.target.files?.[0] || null); setSubmitError(null); }}
+                        />
+                        <label htmlFor="file-upload" className="px-8 py-3 bg-white border border-gray-200 rounded-xl font-black text-xs uppercase tracking-widest cursor-pointer hover:bg-gray-50 transition-all shadow-sm">
+                           {file ? file.name : 'Choose Blueprint File'}
+                        </label>
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] text-center">
+                          {formData.type === 'yaml' ? 'Supported: .yaml, .yml' : 'Supported: .zip, .tar, .tar.gz, .tgz, .tar.bz2, .tbz, .tbz2, .tar.xz, .txz'}
+                        </p>
+                        <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em]">Max file size: 50MB</p>
+                     </div>
+                   )}
+                </div>
+
+                <div className="flex gap-6 pt-4 sticky bottom-0 bg-white py-4 mt-auto">
+                   <button 
+                     type="button" 
+                     onClick={() => setIsModalOpen(false)}
+                     className="flex-1 px-8 py-5 border-2 border-gray-100 text-gray-500 rounded-[1.5rem] font-black text-xs uppercase tracking-widest hover:bg-gray-50 transition-all"
+                   >
+                     Cancel
+                   </button>
+                   <button 
+                     type="submit"
+                     disabled={isSubmitting}
+                     className="flex-1 px-8 py-5 bg-blue-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl shadow-blue-600/30 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+                   >
+                     {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : 'Create Blueprint'}
+                   </button>
+                </div>
+             </form>
           </div>
         </div>
       )}
 
-      {/* New Blueprint Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[1.5rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-              <h2 className="text-xl font-black text-gray-900 tracking-tight uppercase">Upload Service Blueprint</h2>
-              <button onClick={() => { setIsModalOpen(false); resetForm(); }} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-all">
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleUpload} className="p-8 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Service Name</label>
-                  <input
-                    required
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="e.g., redis-cluster"
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-none transition-all font-bold text-gray-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Blueprint Type</label>
-                  <select
-                    value={formData.type}
-                    onChange={(e) => {
-                      const val = e.target.value as 'yaml' | 'zip';
-                      setFormData({ ...formData, type: val });
-                      if (val === 'zip') setImportMode('file');
-                    }}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-none transition-all font-bold text-gray-900 cursor-pointer"
-                  >
-                    <option value="yaml">Single YAML File</option>
-                    <option value="zip">ZIP Package (with mounts)</option>
-                  </select>
-                </div>
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm.show && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-xl" onClick={() => setDeleteConfirm({ show: false, type: 'single' })} />
+          <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-xl overflow-hidden animate-in fade-in zoom-in duration-300 border border-red-100 relative z-[210]">
+            <div className="p-10 border-b border-gray-50 bg-red-50/50 flex items-center gap-6">
+              <div className="w-16 h-16 rounded-[1.5rem] bg-red-100 flex items-center justify-center text-red-600 shadow-lg shadow-red-500/10">
+                <AlertTriangle size={32} />
               </div>
-
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Description</label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Optional technical description..."
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-none transition-all font-medium text-gray-700"
-                  rows={2}
-                />
+                <h2 className="text-2xl font-black text-gray-900 tracking-tight uppercase">Confirm Removal</h2>
+                <p className="text-xs font-black text-red-500 uppercase tracking-widest">Destructive Operation</p>
               </div>
-
-              <div className="space-y-4">
-                {formData.type === 'yaml' && (
-                  <div className="flex p-1 bg-gray-100 rounded-xl w-fit">
-                    <button
-                      type="button"
-                      onClick={() => setImportMode('file')}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${importMode === 'file' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                      <Upload size={14} /> File Upload
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setImportMode('editor')}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${importMode === 'editor' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                      <Edit3 size={14} /> Online Editor
-                    </button>
-                  </div>
-                )}
-
-                {importMode === 'file' ? (
-                  <div className="relative p-8 border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50/50 hover:bg-gray-50 hover:border-blue-300 transition-all group">
-                    <div className="flex flex-col items-center gap-3">
-                      <div className="p-3 bg-white rounded-xl shadow-sm border border-gray-100 text-blue-500 group-hover:scale-110 transition-transform">
-                        <Upload size={24} />
-                      </div>
-                      <div className="text-center">
-                        <p className="text-sm font-bold text-gray-900">
-                          {file ? file.name : `Select ${formData.type.toUpperCase()} file`}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">Drop your file here or click to browse</p>
-                      </div>
-                      <input
-                        required={importMode === 'file'}
-                        type="file"
-                        accept={formData.type === 'yaml' ? '.yaml,.yml' : '.zip'}
-                        onChange={(e) => setFile(e.target.files?.[0] || null)}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">YAML Buffer</label>
-                      <span className="text-[9px] font-mono text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded uppercase font-black">Ready for parse</span>
-                    </div>
-                    <textarea
-                      required={importMode === 'editor'}
-                      value={yamlContent}
-                      onChange={(e) => setYamlContent(e.target.value)}
-                      placeholder="version: '3.8'\nservices:\n  web:\n    image: nginx:latest..."
-                      className="w-full h-64 p-4 bg-slate-900 text-slate-100 font-mono text-sm rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:outline-none border-none resize-none shadow-inner"
-                      spellCheck={false}
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="pt-4 flex gap-4">
-                <button
-                  type="button"
-                  onClick={() => { setIsModalOpen(false); resetForm(); }}
-                  className="flex-1 px-6 py-3 border border-gray-200 text-gray-500 rounded-xl hover:bg-gray-50 font-bold transition-all"
+            </div>
+            <div className="p-10 space-y-8">
+              <p className="text-base text-gray-600 font-bold leading-relaxed">
+                You are about to purge {deleteConfirm.type === 'single' ? `"${deleteConfirm.targetTemplate?.name}"` : `${selectedNames.size} templates`} from the blueprint library. This action cannot be reversed.
+              </p>
+              <div className="flex gap-4">
+                <button onClick={() => setDeleteConfirm({ show: false, type: 'single' })} className="flex-1 px-8 py-5 border-2 border-gray-100 text-gray-500 rounded-[1.5rem] font-black text-xs uppercase tracking-widest hover:bg-gray-50 transition-all">Discard</button>
+                <button 
+                  onClick={executeDelete} 
+                  disabled={batchDeleting || deleting !== null}
+                  className="flex-1 px-8 py-5 bg-red-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl shadow-red-600/30 active:scale-95 transition-all flex items-center justify-center gap-2"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-black uppercase tracking-widest shadow-xl shadow-blue-600/20 active:scale-[0.98] transition-all"
-                >
-                  Create Template
+                  {(batchDeleting || deleting !== null) ? <Loader2 size={16} className="animate-spin" /> : 'Execute Purge'}
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}

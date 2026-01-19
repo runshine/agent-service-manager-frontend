@@ -30,7 +30,11 @@ import {
   Plus,
   FileCode,
   CheckSquare,
-  Loader2
+  Loader2,
+  Layers,
+  Container,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { ServiceTemplate } from '../types';
 
@@ -55,6 +59,13 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
   const [templateSearch, setTemplateSearch] = useState('');
   const [selectedTemplateNames, setSelectedTemplateNames] = useState<Set<string>>(new Set());
   const [isDeploying, setIsDeploying] = useState(false);
+
+  // Undeploy Confirmation Modal State
+  const [undeployModal, setUndeployModal] = useState<{ show: boolean; serviceName: string | null }>({
+    show: false,
+    serviceName: null,
+  });
+  const [isUndeploying, setIsUndeploying] = useState(false);
 
   const fetchAgentData = async () => {
     try {
@@ -86,18 +97,51 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
 
   const handleServiceAction = async (name: string, action: 'start' | 'stop' | 'restart') => {
     try {
-      if (action === 'start') await api.agents.proxy.startService(agentKey, name);
-      if (action === 'stop') await api.agents.proxy.stopService(agentKey, name);
-      if (action === 'restart') await api.agents.proxy.restartService(agentKey, name);
+      let res;
+      if (action === 'start') res = await api.agents.proxy.startService(agentKey, name);
+      if (action === 'stop') res = await api.agents.proxy.stopService(agentKey, name);
+      if (action === 'restart') res = await api.agents.proxy.restartService(agentKey, name);
+      
+      if (res && res.message) {
+        alert(res.message);
+      } else {
+        alert(`${action.charAt(0).toUpperCase() + action.slice(1)} request sent successfully.`);
+      }
+      
       fetchAgentData();
     } catch (err: any) {
       alert(err.message || `Failed to ${action} service`);
     }
   };
 
+  const openUndeployModal = (name: string) => {
+    setUndeployModal({ show: true, serviceName: name });
+  };
+
+  const executeUndeploy = async () => {
+    if (!undeployModal.serviceName) return;
+    
+    setIsUndeploying(true);
+    try {
+      const res = await api.tasks.undeploy({
+        service_name: undeployModal.serviceName,
+        agent_key: agentKey
+      });
+      if (res && res.message) {
+        alert(res.message);
+      }
+      setUndeployModal({ show: false, serviceName: null });
+      onNavigate('/tasks');
+    } catch (err: any) {
+      alert(err.message || 'Failed to create undeploy task');
+    } finally {
+      setIsUndeploying(false);
+    }
+  };
+
   const showLogs = async (name: string) => {
     try {
-      const res = await api.agents.proxy.getLogs(agentKey, name);
+      const res = await api.agents.proxy.getLogs(agentKey, name, 1000);
       setServiceLogs({ name, content: res.logs });
     } catch (err: any) {
       alert(err.message || 'Failed to fetch logs');
@@ -140,7 +184,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
       await Promise.all(names.map(name => 
         api.tasks.deploy({
           agent_key: agentKey,
-          service_name: name, // Defaulting instance name to template name
+          service_name: name,
           template_name: name
         })
       ));
@@ -247,14 +291,11 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
         {activeTab === 'overview' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
-              {/* Core Vital Stats */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <StatCard label="Uptime" value={formatted.uptime || 'N/A'} icon={Clock} color="blue" />
                 <StatCard label="CPU Model" value={sys.cpu?.model} icon={Cpu} color="indigo" size="small" />
                 <StatCard label="Architecture" value={sys.architecture} icon={Server} color="amber" />
               </div>
-              
-              {/* Quick Health Chart */}
               <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm">
                 <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-8 flex items-center gap-2">
                   <Activity size={14} className="text-blue-500" /> Performance Snapshot
@@ -276,27 +317,29 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
                   />
                 </div>
               </div>
-
-              {/* Service Quick View */}
               <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
                 <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
                   <Terminal size={14} className="text-emerald-500" /> Active Service Units
                 </h3>
                 {agent.services?.length > 0 ? (
                   <div className="space-y-2">
-                    {agent.services.map((s: any, idx: number) => (
-                      <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-emerald-50/50 transition-colors">
-                        <span className="text-sm font-bold text-gray-700">{s.name}</span>
-                        <span className="text-[10px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">Running</span>
-                      </div>
-                    ))}
+                    {agent.services.map((s: any, idx: number) => {
+                      const real = s.real_status || {};
+                      const status = real.status || s.status;
+                      const isRunning = status === 'running';
+                      return (
+                        <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-emerald-50/50 transition-colors">
+                          <span className="text-sm font-bold text-gray-700">{s.name}</span>
+                          <span className={`text-[10px] font-black uppercase ${isRunning ? 'text-emerald-600 bg-emerald-50' : 'text-gray-400 bg-gray-100'} px-2 py-0.5 rounded-lg border ${isRunning ? 'border-emerald-100' : 'border-gray-200'}`}>{status}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-10 text-gray-400 italic text-sm">No services deployed on this node.</div>
                 )}
               </div>
             </div>
-
             <div className="space-y-6">
               <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm">
                 <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
@@ -310,7 +353,6 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
                   <InfoRow label="Boot Time" value={new Date(sys.boot_time).toLocaleString()} />
                 </div>
               </div>
-
               <div className="bg-indigo-900 p-8 rounded-3xl shadow-xl shadow-indigo-900/20 text-white">
                 <h3 className="text-xs font-black text-white/40 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
                   <Globe size={14} /> Network Context
@@ -332,7 +374,6 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
 
         {activeTab === 'resources' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Detailed CPU and Load */}
             <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm">
               <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-8 flex items-center gap-2">
                 <Cpu size={14} className="text-blue-500" /> Processor Insight
@@ -352,8 +393,6 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
                 </div>
               </div>
             </div>
-
-            {/* Detailed Memory and Swap */}
             <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm">
               <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-8 flex items-center gap-2">
                 <Database size={14} className="text-purple-500" /> Memory Allocation
@@ -377,8 +416,6 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
                 </div>
               </div>
             </div>
-
-            {/* Storage Partitions */}
             <div className="lg:col-span-2 bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="p-6 border-b border-gray-50 bg-gray-50/30">
                 <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
@@ -435,75 +472,125 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
                  <thead className="bg-gray-50 border-b border-gray-100">
                    <tr>
                      <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Stack Name</th>
-                     <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Deployment Path</th>
-                     <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">State</th>
+                     <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Workload Payload</th>
+                     <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Deployment</th>
+                     <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Operational State</th>
                      <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Operations</th>
                    </tr>
                  </thead>
                  <tbody className="divide-y divide-gray-50">
                    {agent.services?.length === 0 ? (
-                     <tr><td colSpan={4} className="px-6 py-20 text-center text-gray-400 italic text-sm">No managed services found on this agent.</td></tr>
-                   ) : agent.services.map((s: any, idx: number) => (
-                     <tr key={idx} className="hover:bg-blue-50/30 transition-colors">
-                       <td className="px-6 py-4">
-                         <span className="text-sm font-black text-gray-900">{s.name}</span>
-                       </td>
-                       <td className="px-6 py-4">
-                         <span className="text-[10px] font-mono text-gray-400 tracking-tighter">{s.path}</span>
-                       </td>
-                       <td className="px-6 py-4">
-                          <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${
-                            s.status === 'running' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-gray-50 text-gray-500 border-gray-200'
-                          }`}>
-                            {s.status}
-                          </span>
-                       </td>
-                       <td className="px-6 py-4 text-right">
-                         <div className="flex justify-end gap-2">
-                           <button 
-                             onClick={() => showLogs(s.name)}
-                             className="p-2 text-gray-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all"
-                             title="Logs"
-                           >
-                             <Terminal size={18} />
-                           </button>
-                           {s.status === 'running' ? (
-                             <>
-                               <button 
-                                 onClick={() => handleServiceAction(s.name, 'restart')}
-                                 className="p-2 text-gray-400 hover:text-amber-600 hover:bg-white rounded-lg transition-all"
-                                 title="Restart"
-                               >
-                                 <RotateCcw size={18} />
-                               </button>
-                               <button 
-                                 onClick={() => handleServiceAction(s.name, 'stop')}
-                                 className="p-2 text-gray-400 hover:text-red-600 hover:bg-white rounded-lg transition-all"
-                                 title="Stop"
-                               >
-                                 <Square size={18} fill="currentColor" />
-                               </button>
-                             </>
-                           ) : (
+                     <tr><td colSpan={5} className="px-6 py-20 text-center text-gray-400 italic text-sm">No managed services found on this agent.</td></tr>
+                   ) : agent.services.map((s: any, idx: number) => {
+                     const real = s.real_status || {};
+                     const status = real.status || s.status;
+                     const running = real.running || 0;
+                     const total = real.total || 0;
+                     
+                     let statusClasses = "bg-gray-50 text-gray-500 border-gray-200";
+                     if (status === 'running') {
+                       if (running === total && total > 0) statusClasses = "bg-emerald-50 text-emerald-700 border-emerald-100";
+                       else if (running > 0) statusClasses = "bg-amber-50 text-amber-700 border-amber-100";
+                       else statusClasses = "bg-red-50 text-red-700 border-red-100";
+                     }
+
+                     return (
+                       <tr key={idx} className="hover:bg-blue-50/30 transition-colors group/row">
+                         <td className="px-6 py-4">
+                           <div className="flex flex-col">
+                             <span className="text-sm font-black text-gray-900">{s.name}</span>
+                             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Stack Hash: {s.id || '--'}</span>
+                           </div>
+                         </td>
+                         <td className="px-6 py-4">
+                           <div className="flex flex-col gap-2 min-w-[180px]">
+                              <div className="flex flex-wrap gap-1.5">
+                                {real.containers?.slice(0, 3).map((c: any, ci: number) => (
+                                  <div key={ci} className="flex items-center gap-1.5 px-2 py-0.5 bg-gray-50 border border-gray-100 rounded-lg" title={c.Image}>
+                                    <div className={`w-1.5 h-1.5 rounded-full ${c.State === 'running' ? 'bg-emerald-500' : 'bg-red-400'}`} />
+                                    <span className="text-[9px] font-black text-gray-700 uppercase tracking-tighter">{c.Name}</span>
+                                  </div>
+                                ))}
+                                {real.containers?.length > 3 && (
+                                  <span className="text-[9px] font-black text-blue-500 px-1">+ {real.containers.length - 3}</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="h-1 flex-1 bg-gray-100 rounded-full overflow-hidden">
+                                  <div 
+                                    className={`h-full transition-all duration-1000 ${running === total ? 'bg-emerald-500' : 'bg-amber-500'}`} 
+                                    style={{ width: `${total > 0 ? (running/total)*100 : 0}%` }} 
+                                  />
+                                </div>
+                                <span className="text-[10px] font-black text-gray-400">{running}/{total} UP</span>
+                              </div>
+                           </div>
+                         </td>
+                         <td className="px-6 py-4">
+                           <div className="flex flex-col">
+                              <span className="text-[10px] font-mono text-gray-500 truncate max-w-[140px]" title={s.path}>{s.path}</span>
+                              <span className="text-[9px] font-bold text-gray-300 uppercase mt-1">Modified: {s.updated_at ? new Date(s.updated_at).toLocaleTimeString() : '--'}</span>
+                           </div>
+                         </td>
+                         <td className="px-6 py-4">
+                            <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border flex items-center gap-1.5 w-fit ${statusClasses}`}>
+                              {status === 'running' && <Activity size={10} className={running > 0 ? 'animate-pulse' : ''} />}
+                              {status === 'running' && running < total ? 'Degraded' : status}
+                            </span>
+                         </td>
+                         <td className="px-6 py-4 text-right">
+                           <div className="flex justify-end gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
                              <button 
-                               onClick={() => handleServiceAction(s.name, 'start')}
-                               className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-white rounded-lg transition-all"
-                               title="Start"
+                               onClick={() => showLogs(s.name)}
+                               className="p-2 text-gray-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all"
+                               title="Logs"
                              >
-                               <Play size={18} fill="currentColor" />
+                               <Terminal size={18} />
                              </button>
-                           )}
-                         </div>
-                       </td>
-                     </tr>
-                   ))}
+                             {status === 'running' ? (
+                               <>
+                                 <button 
+                                   onClick={() => handleServiceAction(s.name, 'restart')}
+                                   className="p-2 text-gray-400 hover:text-amber-600 hover:bg-white rounded-lg transition-all"
+                                   title="Restart"
+                                 >
+                                   <RotateCcw size={18} />
+                                 </button>
+                                 <button 
+                                   onClick={() => handleServiceAction(s.name, 'stop')}
+                                   className="p-2 text-gray-400 hover:text-red-600 hover:bg-white rounded-lg transition-all"
+                                   title="Stop"
+                                 >
+                                   <Square size={18} fill="currentColor" />
+                                 </button>
+                               </>
+                             ) : (
+                               <button 
+                                 onClick={() => handleServiceAction(s.name, 'start')}
+                                 className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-white rounded-lg transition-all"
+                                 title="Start"
+                               >
+                                 <Play size={18} fill="currentColor" />
+                               </button>
+                             )}
+                             <button 
+                               onClick={() => openUndeployModal(s.name)}
+                               className="p-2 text-gray-400 hover:text-red-700 hover:bg-white rounded-lg transition-all"
+                               title="Undeploy (Delete)"
+                             >
+                               <Trash2 size={18} />
+                             </button>
+                           </div>
+                         </td>
+                       </tr>
+                     );
+                   })}
                  </tbody>
                </table>
              </div>
           </div>
         )}
 
-        {/* Other tabs follow similar polished pattern ... */}
         {activeTab === 'processes' && (
           <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
              <div className="p-6 border-b border-gray-50 bg-gray-50/50">
@@ -546,7 +633,6 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
           </div>
         )}
 
-        {/* Tab content for network and docker skipped for brevity as they remain consistent with the above refinement */}
         {activeTab === 'network' && (
           <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
              <div className="p-6 border-b border-gray-50">
@@ -564,7 +650,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
                  </tr>
                </thead>
                <tbody className="divide-y divide-gray-50">
-                 {sys.network_interfaces?.map((nic: any, idx: number) => (
+                 {nicList(sys.network_interfaces)?.map((nic: any, idx: number) => (
                    <tr key={idx} className="hover:bg-gray-50 transition-colors">
                      <td className="px-6 py-4">
                         <div className="flex flex-col">
@@ -614,7 +700,6 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
                     <span className="bg-gray-100 text-gray-500 text-[10px] font-black px-3 py-1 rounded-xl uppercase">Version {sys.docker.version}</span>
                   )}
                 </div>
-
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
                     <div className="text-[10px] font-black text-gray-400 uppercase mb-1">Containers</div>
@@ -634,7 +719,6 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
                   </div>
                 </div>
               </div>
-
               <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm">
                 <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-6">Engine Configuration</h3>
                 <div className="space-y-4">
@@ -645,7 +729,6 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
                 </div>
               </div>
             </div>
-
             <div className="bg-slate-900 p-8 rounded-3xl text-white shadow-xl shadow-slate-900/20">
                <h3 className="text-xs font-black text-white/40 uppercase tracking-[0.2em] mb-6">Execution Summary</h3>
                <div className="space-y-6">
@@ -666,20 +749,23 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
       {/* Log Modal Overlay */}
       {serviceLogs && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[200] flex items-center justify-center p-8">
-          <div className="bg-slate-900 rounded-[2rem] shadow-2xl w-full max-w-5xl h-[80vh] flex flex-col border border-white/10 overflow-hidden animate-in fade-in zoom-in duration-300">
-            <div className="p-6 border-b border-white/5 flex justify-between items-center">
+          <div className="bg-slate-900 rounded-[2rem] shadow-2xl w-full max-w-[95vw] h-[85vh] flex flex-col border border-white/10 overflow-hidden animate-in fade-in zoom-in duration-300">
+            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-slate-800/50">
               <h2 className="text-white text-sm font-black uppercase tracking-[0.2em] flex items-center gap-3">
                 <Terminal className="text-blue-500" /> Remote Log Tty: {serviceLogs.name}
               </h2>
-              <button onClick={() => setServiceLogs(null)} className="p-2 hover:bg-white/5 rounded-xl text-white/50 hover:text-white transition-colors">
-                <X size={24} />
-              </button>
+              <div className="flex items-center gap-4">
+                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-950 px-3 py-1 rounded-full border border-white/5">Tail: 1000 lines</span>
+                 <button onClick={() => setServiceLogs(null)} className="p-2 hover:bg-white/5 rounded-xl text-white/50 hover:text-white transition-colors">
+                   <X size={24} />
+                 </button>
+              </div>
             </div>
-            <div className="flex-1 p-8 font-mono text-[12px] overflow-y-auto text-slate-300 bg-slate-950/50 custom-scrollbar">
+            <div className="flex-1 p-8 font-mono text-[13px] overflow-y-auto text-slate-300 bg-slate-950/50 custom-scrollbar leading-relaxed">
               {serviceLogs.content ? (
                 serviceLogs.content.split('\n').map((line, i) => (
-                  <div key={i} className="py-0.5 border-l-2 border-white/5 pl-4 hover:bg-white/5 transition-colors">
-                    <span className="text-slate-600 mr-4 select-none inline-block w-8 text-right font-bold">{i+1}</span>
+                  <div key={i} className="py-0.5 border-l-2 border-white/5 pl-4 hover:bg-white/10 transition-colors">
+                    <span className="text-slate-600 mr-4 select-none inline-block w-10 text-right font-bold opacity-40">{i+1}</span>
                     <span className="whitespace-pre-wrap">{line}</span>
                   </div>
                 ))
@@ -689,6 +775,57 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
                   <div className="italic text-sm font-bold uppercase tracking-widest">Streaming buffer from agent...</div>
                 </div>
               )}
+            </div>
+            <div className="p-4 border-t border-white/5 bg-slate-900 flex justify-between items-center">
+               <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Captured from {agent.hostname} ({agent.ip_address})</div>
+               <button onClick={() => showLogs(serviceLogs.name)} className="text-[10px] font-black text-blue-400 hover:text-blue-300 uppercase tracking-widest flex items-center gap-2">
+                 <RefreshCw size={12} /> Reload Stream
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Undeploy Confirmation Modal */}
+      {undeployModal.show && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-xl overflow-hidden border border-red-100 animate-in fade-in zoom-in duration-200">
+            <div className="p-8 border-b border-gray-50 bg-red-50/50 flex items-center gap-6">
+              <div className="w-16 h-16 rounded-2xl bg-red-100 flex items-center justify-center text-red-600 shadow-lg shadow-red-500/10">
+                <AlertTriangle size={32} />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black text-gray-900 tracking-tight uppercase">Confirm Removal</h2>
+                <p className="text-xs font-black text-red-500 uppercase tracking-widest">Destructive Operation</p>
+              </div>
+            </div>
+            <div className="p-10 space-y-8">
+              <div className="space-y-4">
+                <p className="text-base text-gray-600 font-bold leading-relaxed">
+                  You are about to undeploy (delete) service <span className="text-red-600 underline decoration-2 underline-offset-4">"{undeployModal.serviceName}"</span> from <span className="font-black text-gray-900">{agent.hostname}</span>.
+                </p>
+                <div className="p-5 bg-amber-50 rounded-2xl border border-amber-100 flex gap-4 items-start text-amber-800">
+                  <Info size={18} className="shrink-0 mt-0.5" />
+                  <p className="text-xs font-bold leading-relaxed">
+                    This will stop and remove all associated containers and metadata on the agent node. This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setUndeployModal({ show: false, serviceName: null })} 
+                  className="flex-1 px-8 py-4 border-2 border-gray-100 text-gray-500 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-gray-50 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={executeUndeploy} 
+                  disabled={isUndeploying}
+                  className="flex-1 px-8 py-4 bg-red-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-red-600/30 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isUndeploying ? <Loader2 size={16} className="animate-spin" /> : 'Execute Removal'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -707,7 +844,6 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
                 <X size={24} />
               </button>
             </div>
-            
             <div className="flex-1 overflow-hidden flex flex-col p-8 space-y-6">
               <div className="relative">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -719,16 +855,15 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
                   className="w-full pl-12 pr-5 py-3.5 bg-gray-50 border border-gray-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/5 transition-all font-medium text-gray-700"
                 />
               </div>
-
               <div className="flex-1 border border-gray-100 rounded-3xl overflow-hidden flex flex-col bg-gray-50/30">
                 <div className="overflow-y-auto custom-scrollbar">
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-white/80 sticky top-0 z-10 border-b border-gray-100 backdrop-blur-sm">
                       <tr>
                         <th className="px-6 py-4 w-12">
-                          <button onClick={toggleSelectAll} className="text-gray-400 hover:text-indigo-600 transition-colors">
+                          <button onClick={toggleSelectAll} className="text-gray-400 hover:text-blue-600 transition-colors">
                             {selectedTemplateNames.size === filteredTemplates.length && filteredTemplates.length > 0 
-                              ? <CheckSquare size={20} className="text-indigo-600" /> 
+                              ? <CheckSquare size={20} className="text-blue-600" /> 
                               : <Square size={20} />
                             }
                           </button>
@@ -750,7 +885,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
                             className={`hover:bg-indigo-50/50 transition-colors cursor-pointer ${isSelected ? 'bg-indigo-50' : ''}`}
                           >
                             <td className="px-6 py-4">
-                              {isSelected ? <CheckSquare size={20} className="text-indigo-600" /> : <Square size={20} className="text-gray-300" />}
+                              {isSelected ? <CheckSquare size={20} className="text-blue-600" /> : <Square size={20} className="text-gray-300" />}
                             </td>
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-3">
@@ -776,7 +911,6 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
                 </div>
               </div>
             </div>
-
             <div className="p-8 border-t border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600">
@@ -809,12 +943,11 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agentKey, onBack, onNavigate 
   );
 };
 
-// Internal Helper Components
 const TabButton = ({ id, current, onClick, icon: Icon, label }: any) => (
   <button
     onClick={onClick}
     className={`flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${
-      current === id 
+      current === id || (typeof current === 'function' && current(id))
         ? 'bg-white text-blue-600 shadow-sm' 
         : 'text-gray-500 hover:text-gray-900'
     }`}
@@ -875,5 +1008,11 @@ const InfoRow = ({ label, value }: { label: string, value: string }) => (
     <span className="text-xs font-bold text-gray-700 truncate max-w-[180px]">{value || '--'}</span>
   </div>
 );
+
+const nicList = (nicObj: any) => {
+  if (!nicObj) return [];
+  if (Array.isArray(nicObj)) return nicObj;
+  return Object.values(nicObj);
+};
 
 export default AgentDetail;
