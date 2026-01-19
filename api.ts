@@ -123,6 +123,28 @@ export const api = {
     }),
     delete: (name: string) => api.request<any>(`/templates/${encodeURIComponent(name)}`, { method: 'DELETE' }),
     download: (name: string) => api.download(`/templates/${encodeURIComponent(name)}/download`),
+    
+    files: {
+      list: (name: string, path?: string) => api.request<any>(`/templates/${encodeURIComponent(name)}/files${path ? `?path=${encodeURIComponent(path)}` : ''}`),
+      getContent: (name: string, path: string, preview = false) => api.request<any>(`/templates/${encodeURIComponent(name)}/files/content?path=${encodeURIComponent(path)}&preview=${preview}`),
+      updateContent: (name: string, data: { path: string, content: string, encoding?: string }) => api.request<any>(`/templates/${encodeURIComponent(name)}/files/content`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+      }),
+      download: (name: string, path: string) => api.download(`/templates/${encodeURIComponent(name)}/files/download?path=${encodeURIComponent(path)}`),
+      upload: (name: string, formData: FormData) => api.request<any>(`/templates/${encodeURIComponent(name)}/files/upload`, {
+        method: 'POST',
+        body: formData
+      }),
+      deleteFile: (name: string, path: string) => api.request<any>(`/templates/${encodeURIComponent(name)}/files`, {
+        method: 'DELETE',
+        body: JSON.stringify({ path })
+      }),
+      deleteDirectory: (name: string, path: string, force = false) => api.request<any>(`/templates/${encodeURIComponent(name)}/directories`, {
+        method: 'DELETE',
+        body: JSON.stringify({ path, force })
+      }),
+    }
   },
 
   agents: {
