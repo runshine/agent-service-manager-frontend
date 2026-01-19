@@ -1,4 +1,5 @@
 
+// Add missing React import to ensure React namespace is available for React.FC
 import React from 'react';
 import { 
   LayoutDashboard, 
@@ -8,7 +9,8 @@ import {
   Users, 
   UserCircle, 
   LogOut,
-  Container
+  Container,
+  Layers
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -23,6 +25,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPath, userRole, onNavigate, on
     { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
     { name: 'Templates', icon: FileCode, path: '/templates' },
     { name: 'Agents', icon: Server, path: '/agents' },
+    { name: 'Services', icon: Layers, path: '/services' },
     { name: 'Tasks', icon: ClipboardList, path: '/tasks' },
   ];
 

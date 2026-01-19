@@ -7,6 +7,7 @@ import Templates from './pages/Templates';
 import TemplateDetail from './pages/TemplateDetail';
 import Agents from './pages/Agents';
 import AgentDetail from './pages/AgentDetail';
+import Services from './pages/Services';
 import Tasks from './pages/Tasks';
 import Users from './pages/Users';
 import Login from './pages/Login';
@@ -70,6 +71,7 @@ const App: React.FC = () => {
       case '/dashboard': return <Dashboard workspaceId={currentWorkspace} onNavigate={navigate} />;
       case '/templates': return <Templates />;
       case '/agents': return <Agents workspaceId={currentWorkspace} onSelectAgent={(key) => navigate(`/agents/${key}`)} />;
+      case '/services': return <Services workspaceId={currentWorkspace} onNavigate={navigate} />;
       case '/tasks': return <Tasks workspaceId={currentWorkspace} />;
       case '/users': return user?.role === 'admin' ? <Users /> : <Dashboard workspaceId={currentWorkspace} onNavigate={navigate} />;
       case '/profile': return (
@@ -116,7 +118,6 @@ const App: React.FC = () => {
           userName={user?.full_name || user?.username || 'User'}
         />
         <main className="p-6 md:p-10 flex-1 flex flex-col">
-          {/* Removed max-w-7xl and mx-auto to allow full screen width */}
           <div className="w-full flex-1">
             {renderContent()}
           </div>
